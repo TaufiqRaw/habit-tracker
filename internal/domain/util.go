@@ -5,6 +5,10 @@ import (
 	"reflect"
 )
 
+type Scannable interface {
+	Scan(dest ...any) error
+}
+
 type columnDataContainer[T interface{}] struct {
 	Str T
 	AsArray []string

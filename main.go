@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"embed"
-	"habit-tracker/internal/repository"
 	"log"
 	"os"
 	"path/filepath"

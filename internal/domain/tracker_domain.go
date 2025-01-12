@@ -7,24 +7,29 @@ import (
 const TrackerTableName = "tracker"
 
 type TrackerColsType struct {
-	HabitID string
+	HabitId string
 	Amount string
 	At string
 }
 
 var TrackerCols = NewColumnDataContainer(TrackerColsType{
-	HabitID: "habit_id",
+	HabitId: "habit_id",
 	Amount: "amount",
 	At: "at",
 })
 
 type Tracker struct {
-	HabitID int64
+	HabitId int64
 	Amount uint
 	At time.Time
 }
 
 type SetTrackerDto struct {
-	HabitID int64
+	HabitId int64
 	Amount uint
+}
+
+type TrackerRepository interface {
+	Set(dto SetTrackerDto) error
+	Index(year int, month int) ([]Tracker, error)
 }

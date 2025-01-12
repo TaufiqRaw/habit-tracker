@@ -15,7 +15,7 @@ type trackerRepository struct {
 	db   *sql.DB
 }
 
-func CreateTrackerRepository(db *sql.DB) *trackerRepository {
+func CreateTrackerRepository(db *sql.DB) domain.TrackerRepository {
 	return &trackerRepository{
 		cols: domain.TrackerCols.Str,
 		db: db,
@@ -31,7 +31,7 @@ func (r *trackerRepository) Set(dto domain.SetTrackerDto) error {
             r.cols.Amount : dto.Amount,
         }).Where(sq.Eq{
 			r.cols.At : sq.Expr(time.Now().String()[:10]),
-			r.cols.HabitID : dto.HabitID,
+			r.cols.HabitId : dto.HabitId,
 		}).MustSql()
 
 		res, err := r.db.Exec(sql, args...)
@@ -52,7 +52,7 @@ func (r *trackerRepository) Set(dto domain.SetTrackerDto) error {
 	sql, args := sq.
         Insert(domain.TrackerTableName).
         SetMap(map[string]interface{}{
-            r.cols.HabitID : dto.HabitID,
+            r.cols.HabitId : dto.HabitId,
 			r.cols.Amount : dto.Amount,
 			r.cols.At : time.Now().String()[:10],
         }).MustSql()
@@ -88,7 +88,7 @@ func (r *trackerRepository) Index(year int, month int) ([]domain.Tracker, error)
     for rows.Next() {
         tracker := domain.Tracker{}
         var atStr sql.NullString
-        err := rows.Scan(&tracker.HabitID, &tracker.Amount, &atStr)
+        err := rows.Scan(&tracker.HabitId, &tracker.Amount, &atStr)
 
         if atStr.Valid {
             tracker.At, err = time.Parse("2006-01-02", atStr.String)
