@@ -3,6 +3,9 @@ package main
 import (
 	"database/sql"
 	"embed"
+	"habit-tracker/internal/domain"
+	"habit-tracker/internal/repository"
+	"habit-tracker/internal/service"
 	"log"
 	"os"
 	"path/filepath"
@@ -38,7 +41,7 @@ func main() {
 		}
 	}
 	
-	// habitRepository := repository.CreateHabitRepository(db)
+	habitService := service.CreateHabitService(repository.CreateHabitRepository(db))
 
 	err := wails.Run(&options.App{
 		Title:  "Taufiqraw's Habit Tracker",
@@ -49,7 +52,10 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		Bind: []interface{}{
-			// habitRepository,
+			habitService,
+		},
+		EnumBind: []interface{}{
+			domain.AllRestDayMode,
 		},
 	})
 

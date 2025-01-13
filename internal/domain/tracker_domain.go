@@ -26,7 +26,7 @@ type Tracker struct {
 
 type SetTrackerDto struct {
 	HabitId int64
-	Amount uint
+	Amount int
 }
 
 type TrackerRepository interface {

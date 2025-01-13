@@ -46,7 +46,6 @@ func (r *habitRepository) Index(page uint64, limit uint64, unarchived bool) ([]d
     defer rows.Close()
 
     for rows.Next() {
-		rows.Scan()
         habit, err := r.scanOneHabit(rows)
 		if err != nil {
 			return nil, fmt.Errorf("Habit::scanOneHabit : %v", err)
@@ -66,6 +65,8 @@ func (r *habitRepository) Create(dto domain.CreateHabitDTO) (*domain.Habit, erro
 		r.cols.Name : dto.Name,
 		r.cols.Amount : dto.Amount,
 		r.cols.Unit : dto.Unit,
+		r.cols.RestDay : dto.RestDay,
+		r.cols.RestDayMode : dto.RestDayMode,
 		r.cols.StartAt : createdAt.String()[:10],
 	}
 
@@ -88,9 +89,11 @@ func (r *habitRepository) Create(dto domain.CreateHabitDTO) (*domain.Habit, erro
     return &domain.Habit{
         Id: ID,
         Name: dto.Name,
-        Amount: dto.Amount,
+        Amount: uint(dto.Amount),
         Unit: dto.Unit,
         ArchivedAt: nil,
+		RestDay: uint(dto.RestDay),
+		RestDayMode: dto.RestDayMode,
 		StartAt: createdAt,
 		LastHabitId: nil,
     }, nil
@@ -160,13 +163,13 @@ func (r *habitRepository) GetNode(id int64) (*domain.HabitNode, error) {
 	return habitNode, nil
 }
 
-func (r *habitRepository) Update(dto domain.UpdateHabitDTO) error {
+func (r *habitRepository) Update(dto domain.UpdateHabitDTO) (*domain.Habit, error) {
 	oldHabit, err := r.getOne(dto.ID)
 	if err != nil {
-		return fmt.Errorf("Habit::Update : %v", err)
+		return nil, fmt.Errorf("Habit::Update : %v", err)
 	}
 	if oldHabit == nil {
-		return nil
+		return nil, nil
 	}
 	//if start_at is now() just change it, otherwise create new habit with dto's id as last_habit_id
 	if oldHabit.StartAt.String()[:10] == time.Now().String()[:10] {
@@ -188,10 +191,11 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) error {
 			}).MustSql()
 		_, err := r.db.Exec(s, args...)
 		if err != nil {
-			return fmt.Errorf("Habit::Update : %v", err)
+			return nil, fmt.Errorf("Habit::Update : %v", err)
 		}
-		return nil
+		return nil, nil
 	}
+
 	createDto := domain.CreateHabitDTO{
 		LastHabitID: &dto.ID,
 	}
@@ -204,7 +208,7 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) error {
 	if dto.Amount != nil {
 		createDto.Amount = *dto.Amount
 	}else {
-		createDto.Amount = oldHabit.Amount
+		createDto.Amount = int(oldHabit.Amount)
 	}
 
 	if dto.Unit != nil {
@@ -212,15 +216,15 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) error {
 	} else {
 		createDto.Unit = oldHabit.Unit
 	}
-	_, err = r.Create(createDto)
+	habit, err := r.Create(createDto)
 	if err != nil {
-		return fmt.Errorf("Habit::Update : %v", err)
+		return nil, fmt.Errorf("Habit::Update : %v", err)
 	}
 
-	return nil
+	return habit, nil
 }
 
-func (r *habitRepository) ToggleArchived(id int64) error {
+func (r *habitRepository) ToggleArchived(id int64) (*domain.Habit, error) {
     isArchived := false
 	startAt := ""
     {
@@ -239,7 +243,7 @@ func (r *habitRepository) ToggleArchived(id int64) error {
 		row := r.db.QueryRow(sql, args...)
 		err := row.Scan(&isArchived, &startAt)
 		if err != nil {
-            return fmt.Errorf("Habit::ToggleArchived : %v", err)
+            return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 		}
 	}
 
@@ -247,21 +251,21 @@ func (r *habitRepository) ToggleArchived(id int64) error {
 	if isArchived && startAt != time.Now().String()[:10] {
 		habit, err := r.getOne(id)
 		if err != nil {
-			return fmt.Errorf("Habit::ToggleArchived : %v", err)
+			return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 		}
 		if habit == nil {
-			return nil
+			return nil, nil
 		}
 		_, err = r.Create(domain.CreateHabitDTO{
 			Name: habit.Name,
-			Amount: habit.Amount,
+			Amount: int(habit.Amount),
 			Unit: habit.Unit,
 			LastHabitID: &id,
 		})
 		if err != nil {
-			return fmt.Errorf("Habit::ToggleArchived : %v", err)
+			return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 		} 
-		return nil
+		return habit, nil
 	}
 
     newArchivedAt := map[string]interface{}{
@@ -274,9 +278,9 @@ func (r *habitRepository) ToggleArchived(id int64) error {
 		MustSql()
 	_, err := r.db.Exec(sql, args...)
 	if err != nil {
-		return fmt.Errorf("Habit::ToggleArchived : %v", err)
+		return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 	}
-	return nil
+	return nil, nil
 }
 
 func (r *habitRepository) Delete(id int64) error {
@@ -317,7 +321,10 @@ func (r *habitRepository) scanOneHabit(row domain.Scannable) (domain.Habit, erro
     var archivedAtStr sql.NullString
 	var startAtStr string
 	var lastHabitID sql.NullInt64
-    err := row.Scan(&habit.Id, &lastHabitID,&habit.Name, &habit.Amount, &habit.Unit, &startAtStr,&archivedAtStr)
+    err := row.Scan(&habit.Id, &lastHabitID, &habit.Name, 
+			&habit.Amount, &habit.Unit, 
+			&habit.RestDay, &habit.RestDayMode, 
+			&startAtStr, &archivedAtStr)
 
 	if err != nil {
         return domain.Habit{}, fmt.Errorf("Habit::Index : %v", err)

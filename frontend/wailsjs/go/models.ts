@@ -1,9 +1,16 @@
 export namespace domain {
 	
+	export enum RestDayModeEnum {
+	    WEEKLY = "Weekly",
+	    MONTHLY = "Monthly",
+	}
 	export class CreateHabitDTO {
 	    Name: string;
 	    Amount: number;
 	    Unit: string;
+	    RestDay: number;
+	    RestDayMode: RestDayModeEnum;
+	    LastHabitID?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new CreateHabitDTO(source);
@@ -14,13 +21,21 @@ export namespace domain {
 	        this.Name = source["Name"];
 	        this.Amount = source["Amount"];
 	        this.Unit = source["Unit"];
+	        this.RestDay = source["RestDay"];
+	        this.RestDayMode = source["RestDayMode"];
+	        this.LastHabitID = source["LastHabitID"];
 	    }
 	}
 	export class Habit {
-	    ID: number;
+	    Id: number;
+	    LastHabitId?: number;
 	    Name: string;
 	    Amount: number;
 	    Unit: string;
+	    RestDay: number;
+	    RestDayMode: RestDayModeEnum;
+	    // Go type: time
+	    StartAt: any;
 	    // Go type: time
 	    ArchivedAt?: any;
 	
@@ -30,10 +45,14 @@ export namespace domain {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.ID = source["ID"];
+	        this.Id = source["Id"];
+	        this.LastHabitId = source["LastHabitId"];
 	        this.Name = source["Name"];
 	        this.Amount = source["Amount"];
 	        this.Unit = source["Unit"];
+	        this.RestDay = source["RestDay"];
+	        this.RestDayMode = source["RestDayMode"];
+	        this.StartAt = this.convertValues(source["StartAt"], null);
 	        this.ArchivedAt = this.convertValues(source["ArchivedAt"], null);
 	    }
 	
@@ -55,35 +74,38 @@ export namespace domain {
 		    return a;
 		}
 	}
-	export class SetTrackerDto {
-	    HabitID: number;
+	export class HabitNode {
+	    Id: number;
+	    LastHabitId?: number;
+	    Name: string;
 	    Amount: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new SetTrackerDto(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.HabitID = source["HabitID"];
-	        this.Amount = source["Amount"];
-	    }
-	}
-	export class Tracker {
-	    HabitID: number;
-	    Amount: number;
+	    Unit: string;
+	    RestDay: number;
+	    RestDayMode: RestDayModeEnum;
 	    // Go type: time
-	    At: any;
+	    StartAt: any;
+	    // Go type: time
+	    ArchivedAt?: any;
+	    PreviousHabit?: Habit;
+	    NextHabit?: Habit;
 	
 	    static createFrom(source: any = {}) {
-	        return new Tracker(source);
+	        return new HabitNode(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.HabitID = source["HabitID"];
+	        this.Id = source["Id"];
+	        this.LastHabitId = source["LastHabitId"];
+	        this.Name = source["Name"];
 	        this.Amount = source["Amount"];
-	        this.At = this.convertValues(source["At"], null);
+	        this.Unit = source["Unit"];
+	        this.RestDay = source["RestDay"];
+	        this.RestDayMode = source["RestDayMode"];
+	        this.StartAt = this.convertValues(source["StartAt"], null);
+	        this.ArchivedAt = this.convertValues(source["ArchivedAt"], null);
+	        this.PreviousHabit = this.convertValues(source["PreviousHabit"], Habit);
+	        this.NextHabit = this.convertValues(source["NextHabit"], Habit);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -103,6 +125,28 @@ export namespace domain {
 		    }
 		    return a;
 		}
+	}
+	export class UpdateHabitDTO {
+	    ID: number;
+	    Name?: string;
+	    Amount?: number;
+	    Unit?: string;
+	    RestDay?: number;
+	    RestDayMode?: RestDayModeEnum;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateHabitDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.Name = source["Name"];
+	        this.Amount = source["Amount"];
+	        this.Unit = source["Unit"];
+	        this.RestDay = source["RestDay"];
+	        this.RestDayMode = source["RestDayMode"];
+	    }
 	}
 
 }
