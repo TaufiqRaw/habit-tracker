@@ -25,3 +25,7 @@ export function ToggleArchived(arg1) {
 export function Update(arg1) {
   return window['go']['service']['HabitService']['Update'](arg1);
 }
+
+export function UpdateName(arg1, arg2) {
+  return window['go']['service']['HabitService']['UpdateName'](arg1, arg2);
+}
