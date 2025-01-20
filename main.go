@@ -1,14 +1,11 @@
 package main
 
 import (
-	"database/sql"
 	"embed"
+	"habit-tracker/internal/bootstrap"
 	"habit-tracker/internal/domain"
 	"habit-tracker/internal/repository"
 	"habit-tracker/internal/service"
-	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -20,28 +17,9 @@ import (
 var assets embed.FS
 
 func main() {
-	var db *sql.DB
-	{
-		//TODO: get better exePath
-		exePath, err := os.Executable()
-		if err != nil {
-			panic(err)
-		}
-	
-		pathToApp := filepath.Join(filepath.Dir(exePath), "data.db")
-		//TODO: cross platform file:
-		db, err = sql.Open("sqlite", "file:///"+pathToApp)
-		if err != nil {
-			log.Fatal(err)
-		}
-	
-		pingErr := db.Ping()
-		if pingErr != nil {
-			log.Fatal(pingErr)
-		}
-	}
-	
+	db := bootstrap.InitDB()
 	habitService := service.CreateHabitService(repository.CreateHabitRepository(db))
+	trackerService := service.CreateTrackerService(repository.CreateTrackerRepository(db))
 
 	err := wails.Run(&options.App{
 		Title:  "Taufiqraw's Habit Tracker",
@@ -53,6 +31,7 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		Bind: []interface{}{
 			habitService,
+			trackerService,
 		},
 		EnumBind: []interface{}{
 			domain.AllRestDayMode,

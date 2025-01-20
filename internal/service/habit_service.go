@@ -14,57 +14,117 @@ func CreateHabitService(hRepo domain.HabitRepository) *HabitService {
 	}
 }
 
-func (s *HabitService) Create(dto domain.CreateHabitDTO) (*domain.Habit, *string) {
+type habitResult struct{
+	Data *domain.Habit
+	Err *string
+}
+
+type habitArrResult struct {
+	Data []domain.Habit
+	Err *string
+}
+
+type habitNodeResult struct {
+	Data *domain.HabitNode
+	Err *string
+}
+
+func (s *HabitService) Create(dto domain.CreateHabitDTO) habitResult {
 	if dto.Amount < 0 || dto.RestDay < 0{
 		e:="HabitService::Create : Invalid dto"
-		return nil, &e
+		return habitResult{
+			Data: nil,
+			Err: &e,
+		}
 	}
 	h, err := s.hRepo.Create(dto)
 	if err != nil {
 		e := err.Error()
-		return nil, &e
+		return habitResult{
+			Data: nil,
+			Err: &e,
+		}
 	}
-	return h, nil
+	return habitResult{
+		Data: h,
+		Err: nil,
+	}
 }
 
-func (s *HabitService) Index(page int64, limit int64, unarchived bool) ([]domain.Habit, *string) {
+func (s *HabitService) Index(page int64, limit int64, unarchived bool) habitArrResult {
 	if page < 1 || limit < 1 {
 		e := "HabitService::Index : pagination invalid"
-		return nil, &e
+		return habitArrResult{
+			Data: nil,
+			Err: &e,
+		}
 	}
 	habits, err := s.hRepo.Index(uint64(page), uint64(limit), unarchived)
 	if err != nil {
 		e := err.Error()
-		return nil,&e
+		return habitArrResult{
+			Data: nil,
+			Err: &e,
+		}
 	}
-	return habits, nil
+	return habitArrResult{
+		Data: habits,
+		Err: nil,
+	}
 }
 
-func (s *HabitService) GetNode(id int64) (*domain.HabitNode, *string) {
+func (s *HabitService) GetNode(id int64) habitNodeResult {
 	n, err := s.hRepo.GetNode(id)
 	if err != nil {
 		e := err.Error()
-		return nil, &e
+		return habitNodeResult{
+			Data: nil,
+			Err: &e,
+		}
 	}
-	return n, nil
+	return habitNodeResult{
+		Data: n,
+		Err: nil,
+	}
 }
 
-func (s *HabitService) Update(dto domain.UpdateHabitDTO) (*domain.Habit, *string) {
-	habit, err := s.hRepo.Update(dto)
+func (s *HabitService) Update(dto domain.UpdateHabitDTO) habitResult {
+	h, err := s.hRepo.Update(dto)
 	if err != nil {
 		e := err.Error()
-		return nil,&e
+		return habitResult{
+			Data: nil,
+			Err: &e,
+		}
 	}
-	return habit, nil
+	return habitResult{
+		Data: h,
+		Err: nil,
+	}
 }
 
-func (s *HabitService) ToggleArchived(id int64) (*domain.Habit, *string) {
-	habit, err := s.hRepo.ToggleArchived(id)
+func (s *HabitService) UpdateName(id int64, name string) *string {
+	err := s.hRepo.UpdateName(id, name)
 	if err != nil {
 		e := err.Error()
-		return nil,&e
+		return &e
 	}
-	return habit, nil
+	return nil
+}
+
+func (s *HabitService) ToggleArchived(id int64) habitResult {
+	h, err := s.hRepo.ToggleArchived(id)
+	if err != nil {
+		e := err.Error()
+		return habitResult{
+			Data: nil,
+			Err: &e,
+		}
+	}
+	return habitResult{
+		Data: h,
+		Err: nil,
+	}
 }
 
 func (s *HabitService) Delete(id int64) *string {

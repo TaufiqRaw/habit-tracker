@@ -12,17 +12,31 @@ func CreateTrackerService(tRepo domain.TrackerRepository) *TrackerService {
 	}
 }
 
-func (s *TrackerService) Index(year int, month int) ([]domain.Tracker, *string) {
+type TrackerArrResult struct {
+	Data []domain.Tracker
+	Err *string
+}
+
+func (s *TrackerService) Index(year int, month int) TrackerArrResult {
 	if year < 1 || month < 1 || month > 12 {
 		e := "TrackerService::Index : invalid args"
-		return nil, &e
+		return TrackerArrResult{
+			Data: nil,
+			Err: &e,
+		}
 	} 
-	d, err := s.tRepo.Index(year, month)
+	t, err := s.tRepo.Index(year, month)
 	if err != nil {
 		e := err.Error()
-		return nil, &e
+		return TrackerArrResult{
+			Data: nil,
+			Err: &e,
+		}
 	}
-	return d, nil
+	return TrackerArrResult{
+		Data: t,
+		Err: nil,
+	}
 }
 
 func (s *TrackerService) Set(dto domain.SetTrackerDto) (*string) {

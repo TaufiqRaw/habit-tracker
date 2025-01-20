@@ -174,15 +174,20 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) (*domain.Habit, erro
 	//if start_at is now() just change it, otherwise create new habit with dto's id as last_habit_id
 	if oldHabit.StartAt.String()[:10] == time.Now().String()[:10] {
 		updateMap := make(map[string]interface{})
-		if dto.Name != nil {
-			updateMap[r.cols.Name] = *dto.Name
-		}
 		if dto.Amount != nil {
 			updateMap[r.cols.Amount] = *dto.Amount
 		}
 		if dto.Unit != nil {
 			updateMap[r.cols.Unit] = *dto.Unit
 		} 
+        if dto.RestDay != nil {
+            updateMap[r.cols.RestDay] = *dto.RestDay
+        }
+        if dto.RestDayMode != nil {
+            updateMap[r.cols.RestDayMode] = *dto.RestDayMode
+        }
+		//TODO: Add rest day and rest mode
+
 		s, args := sq.
 			Update(domain.HabitTableName).
 			SetMap(updateMap).
@@ -194,34 +199,60 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) (*domain.Habit, erro
 			return nil, fmt.Errorf("Habit::Update : %v", err)
 		}
 		return nil, nil
-	}
-
-	createDto := domain.CreateHabitDTO{
-		LastHabitID: &dto.ID,
-	}
-	if dto.Name != nil {
-		createDto.Name = *dto.Name
-	} else {
-		createDto.Name = oldHabit.Name
-	}
-
-	if dto.Amount != nil {
-		createDto.Amount = *dto.Amount
 	}else {
-		createDto.Amount = int(oldHabit.Amount)
-	}
+        createDto := domain.CreateHabitDTO{
+            LastHabitID: &dto.ID,
+            Name : oldHabit.Name,
+        }
 
-	if dto.Unit != nil {
-		createDto.Unit = *dto.Unit
-	} else {
-		createDto.Unit = oldHabit.Unit
-	}
-	habit, err := r.Create(createDto)
+        //Amount
+        if dto.Amount != nil {
+            createDto.Amount = *dto.Amount
+        }else {
+            createDto.Amount = int(oldHabit.Amount)
+        }
+        //Unit
+        if dto.Unit != nil {
+            createDto.Unit = *dto.Unit
+        } else {
+            createDto.Unit = oldHabit.Unit
+        }
+        //Rest Day
+        if dto.RestDay != nil {
+            createDto.RestDay = *dto.RestDay
+        } else {
+            createDto.RestDay = int(oldHabit.RestDay)
+        }
+        //Rest Day Mode
+        if dto.RestDayMode != nil {
+            createDto.RestDayMode = *dto.RestDayMode
+        } else {
+            createDto.RestDayMode = oldHabit.RestDayMode
+        }
+
+        habit, err := r.Create(createDto)
+        if err != nil {
+            return nil, fmt.Errorf("Habit::Update : %v", err)
+        }
+
+        return habit, nil
+    }
+}
+
+func (r *habitRepository) UpdateName(id int64, name string) error {
+    s, args := sq.
+		Update(domain.HabitTableName).
+		SetMap(map[string]interface{}{
+            r.cols.Name : name,
+        }).
+		Where(sq.Eq{
+			r.cols.Id : id,
+		}).MustSql()
+	_, err := r.db.Exec(s, args...)
 	if err != nil {
-		return nil, fmt.Errorf("Habit::Update : %v", err)
+		return fmt.Errorf("Habit::UpdateName : %v", err)
 	}
-
-	return habit, nil
+	return nil
 }
 
 func (r *habitRepository) ToggleArchived(id int64) (*domain.Habit, error) {

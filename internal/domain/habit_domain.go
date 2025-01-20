@@ -74,7 +74,6 @@ type CreateHabitDTO struct {
 
 type UpdateHabitDTO struct {
 	ID int64
-	Name *string
 	Amount *int
 	Unit *string
 	RestDay *int
@@ -86,6 +85,7 @@ type HabitRepository interface {
 	Create(dto CreateHabitDTO) (*Habit, error)
 	GetNode(id int64) (*HabitNode, error)
 	Update(dto UpdateHabitDTO) (*Habit, error)
+	UpdateName(id int64, name string) (error)
 	ToggleArchived(id int64) (*Habit, error)
 	Delete(id int64) error
 }
