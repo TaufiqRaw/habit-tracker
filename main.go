@@ -21,6 +21,11 @@ func main() {
 	habitService := service.CreateHabitService(repository.CreateHabitRepository(db))
 	trackerService := service.CreateTrackerService(repository.CreateTrackerRepository(db))
 
+	//update this when adding service
+	services := []service.Startable{
+		habitService, trackerService,
+	}
+
 	err := wails.Run(&options.App{
 		Title:  "Taufiqraw's Habit Tracker",
 		Width:  1024,
@@ -36,6 +41,7 @@ func main() {
 		EnumBind: []interface{}{
 			domain.AllRestDayMode,
 		},
+		OnStartup: service.OnStartup(services),
 	})
 
 	if err != nil {

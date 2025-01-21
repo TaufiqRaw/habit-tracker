@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -22,7 +23,7 @@ func CreateTrackerRepository(db *sql.DB) domain.TrackerRepository {
 	}
 }
 
-func (r *trackerRepository) Set(dto domain.SetTrackerDto) error {
+func (r *trackerRepository) Set(c context.Context, dto domain.SetTrackerDto) error {
 	var affected int64 
 	{
 		sql, args := sq.
@@ -34,7 +35,7 @@ func (r *trackerRepository) Set(dto domain.SetTrackerDto) error {
 			r.cols.HabitId : dto.HabitId,
 		}).MustSql()
 
-		res, err := r.db.Exec(sql, args...)
+		res, err := r.db.ExecContext(c, sql, args...)
 		if err != nil {
 			return fmt.Errorf("Tracker::Set : %v", err)
 		}
@@ -57,14 +58,14 @@ func (r *trackerRepository) Set(dto domain.SetTrackerDto) error {
 			r.cols.At : time.Now().String()[:10],
         }).MustSql()
 
-    _, err := r.db.Exec(sql, args...)
+    _, err := r.db.ExecContext(c, sql, args...)
 	if err != nil {
 		return fmt.Errorf("Tracker::Set : %v", err)
 	}
 	return nil
 }
 
-func (r *trackerRepository) Index(year int, month int) ([]domain.Tracker, error) {
+func (r *trackerRepository) Index(c context.Context, year int, month int) ([]domain.Tracker, error) {
     trackers := []domain.Tracker{}
 
 	if month < 1 || month > 12 {
@@ -79,7 +80,7 @@ func (r *trackerRepository) Index(year int, month int) ([]domain.Tracker, error)
 			r.cols.At : targetDate.String()[:7],
 		}).MustSql()
 
-    rows, err := r.db.Query(s, args...)
+    rows, err := r.db.QueryContext(c, s, args...)
     if err != nil {
         return nil, fmt.Errorf("Tracker::Index : %v", err)
     }

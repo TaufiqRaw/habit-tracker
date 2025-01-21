@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"time"
 )
 
@@ -30,6 +31,6 @@ type SetTrackerDto struct {
 }
 
 type TrackerRepository interface {
-	Set(dto SetTrackerDto) error
-	Index(year int, month int) ([]Tracker, error)
+	Set(c context.Context, dto SetTrackerDto) error
+	Index(c context.Context, year int, month int) ([]Tracker, error)
 }

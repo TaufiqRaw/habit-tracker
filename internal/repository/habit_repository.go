@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -15,14 +16,14 @@ type habitRepository struct {
     db *sql.DB
 }
 
-func CreateHabitRepository(db *sql.DB) domain.HabitRepository {
+func CreateHabitRepository(db *sql.DB) domain.HabitRepository  {
 	return &habitRepository{
 		cols: domain.HabitCols.Str,
         db: db,
 	}
 }
 
-func (r *habitRepository) Index(page uint64, limit uint64, unarchived bool) ([]domain.Habit, error) {
+func (r *habitRepository) Index(c context.Context, page uint64, limit uint64, unarchived bool) ([]domain.Habit, error) {
     habits := []domain.Habit{}
 
 	preSql := sq.
@@ -39,7 +40,7 @@ func (r *habitRepository) Index(page uint64, limit uint64, unarchived bool) ([]d
 		Limit(limit).
 		Offset(page * limit).MustSql()
 
-    rows, err := r.db.Query(s, args...)
+    rows, err := r.db.QueryContext(c, s, args...)
     if err != nil {
         return nil, fmt.Errorf("Habit::Index : %v", err)
     }
@@ -58,7 +59,7 @@ func (r *habitRepository) Index(page uint64, limit uint64, unarchived bool) ([]d
     return habits, nil
 }
 
-func (r *habitRepository) Create(dto domain.CreateHabitDTO) (*domain.Habit, error) {
+func (r *habitRepository) Create(c context.Context,dto domain.CreateHabitDTO) (*domain.Habit, error) {
 	createdAt := time.Now()
 
 	valueMap := map[string]interface{}{
@@ -78,7 +79,7 @@ func (r *habitRepository) Create(dto domain.CreateHabitDTO) (*domain.Habit, erro
         Insert(domain.HabitTableName).
         SetMap(valueMap).MustSql()
 
-    res, err := r.db.Exec(sql, args...)
+    res, err := r.db.ExecContext(c, sql, args...)
     if err != nil {
         return nil, fmt.Errorf("Habit::Create : %v", err)
     }
@@ -100,7 +101,7 @@ func (r *habitRepository) Create(dto domain.CreateHabitDTO) (*domain.Habit, erro
 }
 
 // Can return nil habit
-func (r *habitRepository) getOne(id int64) (*domain.Habit, error) {
+func (r *habitRepository) getOne(c context.Context,id int64) (*domain.Habit, error) {
 	s, args := sq.
         Select(domain.HabitCols.AsArray...).
         From(domain.HabitTableName).
@@ -108,7 +109,7 @@ func (r *habitRepository) getOne(id int64) (*domain.Habit, error) {
 			r.cols.Id : id,
 		}).MustSql()
 	
-	row := r.db.QueryRow(s, args...)
+	row := r.db.QueryRowContext(c, s, args...)
 	habit, err := r.scanOneHabit(row)
 	if err != nil {
 		e := errors.Unwrap(err)
@@ -121,10 +122,10 @@ func (r *habitRepository) getOne(id int64) (*domain.Habit, error) {
 }
 
 // will throw error if habit doesnt exist
-func (r *habitRepository) GetNode(id int64) (*domain.HabitNode, error) {
+func (r *habitRepository) getNode(c context.Context, id int64) (*domain.HabitNode, error) {
 	habitNode := &domain.HabitNode{}
 
-	habit, err := r.getOne(id)
+	habit, err := r.getOne(c, id)
 	if err != nil {
 		return nil, fmt.Errorf("Habit::GetNode : %v", err)
 	}
@@ -136,7 +137,7 @@ func (r *habitRepository) GetNode(id int64) (*domain.HabitNode, error) {
 
 	var prevHabit *domain.Habit 
 	if habit.LastHabitId != nil {
-		prevHabit, err = r.getOne(*habit.LastHabitId)
+		prevHabit, err = r.getOne(c, *habit.LastHabitId)
 		if err != nil {
 			return nil, fmt.Errorf("Habit::GetNode : %v", err)
 		}
@@ -149,7 +150,7 @@ func (r *habitRepository) GetNode(id int64) (*domain.HabitNode, error) {
 		Where(sq.Eq{
 			r.cols.LastHabitID : id,
 		}).MustSql()
-	nhRow := r.db.QueryRow(nhSql, nhArgs...)
+	nhRow := r.db.QueryRowContext(c, nhSql, nhArgs...)
 	nextHabit, err = r.scanOneHabit(nhRow)
 	if err != nil {
 		e := errors.Unwrap(err)
@@ -163,8 +164,8 @@ func (r *habitRepository) GetNode(id int64) (*domain.HabitNode, error) {
 	return habitNode, nil
 }
 
-func (r *habitRepository) Update(dto domain.UpdateHabitDTO) (*domain.Habit, error) {
-	oldHabit, err := r.getOne(dto.ID)
+func (r *habitRepository) Update(c context.Context, dto domain.UpdateHabitDTO) (*domain.Habit, error) {
+	oldHabit, err := r.getOne(c, dto.ID)
 	if err != nil {
 		return nil, fmt.Errorf("Habit::Update : %v", err)
 	}
@@ -194,7 +195,7 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) (*domain.Habit, erro
 			Where(sq.Eq{
 				r.cols.Id : dto.ID,
 			}).MustSql()
-		_, err := r.db.Exec(s, args...)
+		_, err := r.db.ExecContext(c, s, args...)
 		if err != nil {
 			return nil, fmt.Errorf("Habit::Update : %v", err)
 		}
@@ -230,7 +231,7 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) (*domain.Habit, erro
             createDto.RestDayMode = oldHabit.RestDayMode
         }
 
-        habit, err := r.Create(createDto)
+        habit, err := r.Create(c, createDto)
         if err != nil {
             return nil, fmt.Errorf("Habit::Update : %v", err)
         }
@@ -239,7 +240,7 @@ func (r *habitRepository) Update(dto domain.UpdateHabitDTO) (*domain.Habit, erro
     }
 }
 
-func (r *habitRepository) UpdateName(id int64, name string) error {
+func (r *habitRepository) UpdateName(c context.Context, id int64, name string) error {
     s, args := sq.
 		Update(domain.HabitTableName).
 		SetMap(map[string]interface{}{
@@ -248,14 +249,14 @@ func (r *habitRepository) UpdateName(id int64, name string) error {
 		Where(sq.Eq{
 			r.cols.Id : id,
 		}).MustSql()
-	_, err := r.db.Exec(s, args...)
+	_, err := r.db.ExecContext(c, s, args...)
 	if err != nil {
 		return fmt.Errorf("Habit::UpdateName : %v", err)
 	}
 	return nil
 }
 
-func (r *habitRepository) ToggleArchived(id int64) (*domain.Habit, error) {
+func (r *habitRepository) ToggleArchived(c context.Context, id int64) (*domain.Habit, error) {
     isArchived := false
 	startAt := ""
     {
@@ -271,7 +272,7 @@ func (r *habitRepository) ToggleArchived(id int64) (*domain.Habit, error) {
 				r.cols.Id: id,
 			}).MustSql()
 
-		row := r.db.QueryRow(sql, args...)
+		row := r.db.QueryRowContext(c, sql, args...)
 		err := row.Scan(&isArchived, &startAt)
 		if err != nil {
             return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
@@ -280,14 +281,14 @@ func (r *habitRepository) ToggleArchived(id int64) (*domain.Habit, error) {
 
 	//if already archived and not created now, create new habit but with same values
 	if isArchived && startAt != time.Now().String()[:10] {
-		habit, err := r.getOne(id)
+		habit, err := r.getOne(c, id)
 		if err != nil {
 			return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 		}
 		if habit == nil {
 			return nil, nil
 		}
-		_, err = r.Create(domain.CreateHabitDTO{
+		_, err = r.Create(c, domain.CreateHabitDTO{
 			Name: habit.Name,
 			Amount: int(habit.Amount),
 			Unit: habit.Unit,
@@ -307,16 +308,16 @@ func (r *habitRepository) ToggleArchived(id int64) (*domain.Habit, error) {
 		Update(domain.HabitTableName).
 		SetMap(newArchivedAt).
 		MustSql()
-	_, err := r.db.Exec(sql, args...)
+	_, err := r.db.ExecContext(c, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 	}
 	return nil, nil
 }
 
-func (r *habitRepository) Delete(id int64) error {
+func (r *habitRepository) Delete(c context.Context, id int64) error {
 	//TODO: if there is habit (A) that have this habit as last habit and this habit has last habit (B), change habit (A) last habit to habit (B)
-	habit, err := r.GetNode(id)
+	habit, err := r.getNode(c, id)
 	if err != nil {
 		return fmt.Errorf("Habit::Delete : %v", err)
 	}
@@ -328,7 +329,7 @@ func (r *habitRepository) Delete(id int64) error {
 			}).Where(sq.Eq{
 				r.cols.Id : habit.NextHabit.Id,
 			}).MustSql()
-		_, err := r.db.Exec(s, args...)
+		_, err := r.db.ExecContext(c, s, args...)
 		if err != nil {
 			return fmt.Errorf("Habit::Delete : %v", err)
 		}
@@ -340,7 +341,7 @@ func (r *habitRepository) Delete(id int64) error {
             r.cols.Id : id,
         }).MustSql()
 
-	_, err = r.db.Exec(sql, args...)
+	_, err = r.db.ExecContext(c, sql, args...)
 	if err != nil {
 		return fmt.Errorf("Habit::Delete : %v", err)
 	}

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"time"
 )
 
@@ -81,11 +82,10 @@ type UpdateHabitDTO struct {
 }
 
 type HabitRepository interface {
-	Index(page uint64, limit uint64, unarchived bool) ([]Habit, error)
-	Create(dto CreateHabitDTO) (*Habit, error)
-	GetNode(id int64) (*HabitNode, error)
-	Update(dto UpdateHabitDTO) (*Habit, error)
-	UpdateName(id int64, name string) (error)
-	ToggleArchived(id int64) (*Habit, error)
-	Delete(id int64) error
+	Index(c context.Context, page uint64, limit uint64, unarchived bool) ([]Habit, error)
+	Create(c context.Context, dto CreateHabitDTO) (*Habit, error)
+	Update(c context.Context, dto UpdateHabitDTO) (*Habit, error)
+	UpdateName(c context.Context, id int64, name string) (error)
+	ToggleArchived(c context.Context, id int64) (*Habit, error)
+	Delete(c context.Context, id int64) error
 }

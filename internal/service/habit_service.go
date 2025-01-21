@@ -1,11 +1,13 @@
 package service
 
 import (
+	"context"
 	"habit-tracker/internal/domain"
 )
 
 type HabitService struct {
 	hRepo domain.HabitRepository
+	ctx context.Context
 }
 
 func CreateHabitService(hRepo domain.HabitRepository) *HabitService {
@@ -24,9 +26,8 @@ type habitArrResult struct {
 	Err *string
 }
 
-type habitNodeResult struct {
-	Data *domain.HabitNode
-	Err *string
+func (s *HabitService) startup(c context.Context){
+    s.ctx = c
 }
 
 func (s *HabitService) Create(dto domain.CreateHabitDTO) habitResult {
@@ -37,7 +38,7 @@ func (s *HabitService) Create(dto domain.CreateHabitDTO) habitResult {
 			Err: &e,
 		}
 	}
-	h, err := s.hRepo.Create(dto)
+	h, err := s.hRepo.Create(s.ctx, dto)
 	if err != nil {
 		e := err.Error()
 		return habitResult{
@@ -59,7 +60,7 @@ func (s *HabitService) Index(page int64, limit int64, unarchived bool) habitArrR
 			Err: &e,
 		}
 	}
-	habits, err := s.hRepo.Index(uint64(page), uint64(limit), unarchived)
+	habits, err := s.hRepo.Index(s.ctx, uint64(page), uint64(limit), unarchived)
 	if err != nil {
 		e := err.Error()
 		return habitArrResult{
@@ -73,23 +74,23 @@ func (s *HabitService) Index(page int64, limit int64, unarchived bool) habitArrR
 	}
 }
 
-func (s *HabitService) GetNode(id int64) habitNodeResult {
-	n, err := s.hRepo.GetNode(id)
-	if err != nil {
-		e := err.Error()
-		return habitNodeResult{
-			Data: nil,
-			Err: &e,
-		}
-	}
-	return habitNodeResult{
-		Data: n,
-		Err: nil,
-	}
-}
+// func (s *HabitService) GetNode(id int64) habitNodeResult {
+// 	n, err := s.hRepo.GetNode(id)
+// 	if err != nil {
+// 		e := err.Error()
+// 		return habitNodeResult{
+// 			Data: nil,
+// 			Err: &e,
+// 		}
+// 	}
+// 	return habitNodeResult{
+// 		Data: n,
+// 		Err: nil,
+// 	}
+// }
 
 func (s *HabitService) Update(dto domain.UpdateHabitDTO) habitResult {
-	h, err := s.hRepo.Update(dto)
+	h, err := s.hRepo.Update(s.ctx, dto)
 	if err != nil {
 		e := err.Error()
 		return habitResult{
@@ -104,7 +105,7 @@ func (s *HabitService) Update(dto domain.UpdateHabitDTO) habitResult {
 }
 
 func (s *HabitService) UpdateName(id int64, name string) *string {
-	err := s.hRepo.UpdateName(id, name)
+	err := s.hRepo.UpdateName(s.ctx, id, name)
 	if err != nil {
 		e := err.Error()
 		return &e
@@ -113,7 +114,7 @@ func (s *HabitService) UpdateName(id int64, name string) *string {
 }
 
 func (s *HabitService) ToggleArchived(id int64) habitResult {
-	h, err := s.hRepo.ToggleArchived(id)
+	h, err := s.hRepo.ToggleArchived(s.ctx, id)
 	if err != nil {
 		e := err.Error()
 		return habitResult{
@@ -128,7 +129,7 @@ func (s *HabitService) ToggleArchived(id int64) habitResult {
 }
 
 func (s *HabitService) Delete(id int64) *string {
-	err := s.hRepo.Delete(id)
+	err := s.hRepo.Delete(s.ctx, id)
 	if err != nil {
 		e := err.Error()
 		return &e
