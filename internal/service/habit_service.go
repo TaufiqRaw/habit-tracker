@@ -31,7 +31,7 @@ func (s *HabitService) startup(c context.Context){
 }
 
 func (s *HabitService) Create(dto domain.CreateHabitDTO) habitResult {
-	if dto.Amount < 0 || dto.RestDay < 0{
+	if dto.MinPerDay < 0 || dto.RestDay < 0{
 		e:="HabitService::Create : Invalid dto"
 		return habitResult{
 			Data: nil,
@@ -89,23 +89,8 @@ func (s *HabitService) Index(page int64, limit int64, unarchived bool) habitArrR
 // 	}
 // }
 
-func (s *HabitService) Update(dto domain.UpdateHabitDTO) habitResult {
-	h, err := s.hRepo.Update(s.ctx, dto)
-	if err != nil {
-		e := err.Error()
-		return habitResult{
-			Data: nil,
-			Err: &e,
-		}
-	}
-	return habitResult{
-		Data: h,
-		Err: nil,
-	}
-}
-
-func (s *HabitService) UpdateName(id int64, name string) *string {
-	err := s.hRepo.UpdateName(s.ctx, id, name)
+func (s *HabitService) Update(id int64, name string) *string {
+	err := s.hRepo.Update(s.ctx, id, name)
 	if err != nil {
 		e := err.Error()
 		return &e
@@ -113,17 +98,17 @@ func (s *HabitService) UpdateName(id int64, name string) *string {
 	return nil
 }
 
-func (s *HabitService) ToggleArchived(id int64) habitResult {
-	h, err := s.hRepo.ToggleArchived(s.ctx, id)
+func (s *HabitService) ToggleArchived(id int64) habitNodeResult {
+	hn, err := s.hRepo.ToggleArchived(s.ctx, id)
 	if err != nil {
 		e := err.Error()
-		return habitResult{
+		return habitNodeResult{
 			Data: nil,
 			Err: &e,
 		}
 	}
-	return habitResult{
-		Data: h,
+	return habitNodeResult{
+		Data: hn,
 		Err: nil,
 	}
 }

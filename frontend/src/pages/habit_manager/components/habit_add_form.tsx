@@ -39,7 +39,7 @@ export function HabitAddForm(props : {
     async function onSubmit() {
         const res = await HabitService.Create(new domain.CreateHabitDTO({
             Name : name,
-            Amount : parseInt(minPerDay),
+            MinPerDay : parseInt(minPerDay),
             RestDay : parseInt(restDay),
             RestDayMode : restDayMode,
             Unit : unit

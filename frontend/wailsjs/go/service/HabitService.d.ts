@@ -7,12 +7,8 @@ export function Create(arg1:domain.CreateHabitDTO):Promise<service.habitResult>;
 
 export function Delete(arg1:number):Promise<any>;
 
-export function GetNode(arg1:number):Promise<service.habitNodeResult>;
-
 export function Index(arg1:number,arg2:number,arg3:boolean):Promise<service.habitArrResult>;
 
-export function ToggleArchived(arg1:number):Promise<service.habitResult>;
+export function ToggleArchived(arg1:number):Promise<service.habitNodeResult>;
 
-export function Update(arg1:domain.UpdateHabitDTO):Promise<service.habitResult>;
-
-export function UpdateName(arg1:number,arg2:string):Promise<any>;
+export function Update(arg1:number,arg2:string):Promise<any>;

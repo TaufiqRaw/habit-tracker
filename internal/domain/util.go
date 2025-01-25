@@ -9,14 +9,14 @@ type Scannable interface {
 	Scan(dest ...any) error
 }
 
-type columnDataContainer[T interface{}] struct {
+type ColumnDataContainer[T interface{}] struct {
 	Str T
 	AsArray []string
 }
 
 // all field in T must hold string value
-func NewColumnDataContainer[T interface{}](names T) columnDataContainer[T] {
-	return columnDataContainer[T]{
+func NewColumnDataContainer[T interface{}](names T) ColumnDataContainer[T] {
+	return ColumnDataContainer[T]{
 		Str: names,
 		AsArray: getNameArr(names),
 	}

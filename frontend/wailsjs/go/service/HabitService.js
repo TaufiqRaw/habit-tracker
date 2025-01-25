@@ -10,10 +10,6 @@ export function Delete(arg1) {
   return window['go']['service']['HabitService']['Delete'](arg1);
 }
 
-export function GetNode(arg1) {
-  return window['go']['service']['HabitService']['GetNode'](arg1);
-}
-
 export function Index(arg1, arg2, arg3) {
   return window['go']['service']['HabitService']['Index'](arg1, arg2, arg3);
 }
@@ -22,10 +18,6 @@ export function ToggleArchived(arg1) {
   return window['go']['service']['HabitService']['ToggleArchived'](arg1);
 }
 
-export function Update(arg1) {
-  return window['go']['service']['HabitService']['Update'](arg1);
-}
-
-export function UpdateName(arg1, arg2) {
-  return window['go']['service']['HabitService']['UpdateName'](arg1, arg2);
+export function Update(arg1, arg2) {
+  return window['go']['service']['HabitService']['Update'](arg1, arg2);
 }

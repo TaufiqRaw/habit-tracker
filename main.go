@@ -18,12 +18,16 @@ var assets embed.FS
 
 func main() {
 	db := bootstrap.InitDB()
-	habitService := service.CreateHabitService(repository.CreateHabitRepository(db))
+	
+	habitNodeRepo := repository.CreateHabitNodeRepository(db)
+
+	habitNodeService := service.CreateHabitNodeService(habitNodeRepo)
+	habitService := service.CreateHabitService(repository.CreateHabitRepository(db, habitNodeRepo))
 	trackerService := service.CreateTrackerService(repository.CreateTrackerRepository(db))
 
 	//update this when adding service
 	services := []service.Startable{
-		habitService, trackerService,
+		habitService, habitNodeService, trackerService,
 	}
 
 	err := wails.Run(&options.App{

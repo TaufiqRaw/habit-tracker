@@ -3,312 +3,267 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"habit-tracker/internal/domain"
+	"habit-tracker/internal/repository/colscanner"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
 )
 
 type habitRepository struct {
-	cols domain.HabitColsType
-    db *sql.DB
+	cols   domain.HabitColsType
+	hnRepo *habitNodeRepository
+	db     *sql.DB
+	csf    colscanner.Factory[habitCSHolder, domain.Habit]
 }
 
-func CreateHabitRepository(db *sql.DB) domain.HabitRepository  {
-	return &habitRepository{
-		cols: domain.HabitCols.Str,
-        db: db,
+type habitCSHolder struct {
+	Id         int64
+	Name       string
+	NodeIDs    string
+	LastNodeID sql.NullInt64
+}
+
+func CreateHabitRepository(db *sql.DB, hnRepo domain.HabitNodeRepository) domain.HabitRepository {
+	actualHnRepo, ok := hnRepo.(*habitNodeRepository)
+	if !ok {
+		panic("Invalid Habit Node Repo for SQLite habit repo")
 	}
+	r := &habitRepository{
+		cols:   domain.HabitCols.Str,
+		hnRepo: actualHnRepo,
+		db:     db,
+	}
+	actualHnRepo.setHRepo(r)
+
+	r.csf = colscanner.CreateFactory[habitCSHolder, domain.Habit](
+		func(holder *habitCSHolder, resHolder *domain.Habit) colscanner.Binder {
+			return colscanner.Binder{
+				r.cols.Id: {
+					PtrToHolder: &holder.Id,
+					ConvToResult: func() error {
+						resHolder.Id = holder.Id
+						return nil
+					},
+				},
+				r.cols.Name: {
+					PtrToHolder: &holder.Name,
+					ConvToResult: func() error {
+						resHolder.Name = holder.Name
+						return nil
+					},
+				},
+				r.cols.NodeIDs: {
+					PtrToHolder: &holder.NodeIDs,
+					ConvToResult: func() error {
+						err := json.Unmarshal([]byte(holder.NodeIDs), &resHolder.NodeIDs)
+						if err != nil {
+							return fmt.Errorf("Habit::Scanner : %v", err)
+						}
+						resHolder.NodeLength = len(resHolder.NodeIDs)
+						return nil
+					},
+				},
+			}
+		},
+	)
+
+	return r
+}
+
+func (r *habitRepository) Create(c context.Context, dto domain.CreateHabitDTO) (_ *domain.Habit, err error) {
+
+	hValueMap := map[string]interface{}{
+		r.cols.Name: dto.Name,
+	}
+
+	hnDto := domain.CreateHabitNodeDTO{
+		MinPerDay:   dto.MinPerDay,
+		Unit:        dto.Unit,
+		RestDay:     dto.RestDay,
+		RestDayMode: dto.RestDayMode,
+	}
+
+	tx, err := r.db.BeginTx(c, nil)
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, tx.Rollback())
+			return
+		}
+		err = errors.Join(err, tx.Commit())
+	}()
+
+	// Create Habit
+	var hID int64
+	{
+		sql, args := sq.
+			Insert(domain.HabitTableName).
+			SetMap(hValueMap).MustSql()
+
+		res, err := tx.ExecContext(c, sql, args...)
+		if err != nil {
+			return nil, fmt.Errorf("Habit::Create : %v", err)
+		}
+		hID, err = res.LastInsertId()
+		if err != nil {
+			return nil, fmt.Errorf("Habit::Create : %v", err)
+		}
+
+		hnDto.HabitId = hID
+	}
+
+	// Create Habit Node
+	var hNode *domain.HabitNode
+	{
+		hNode, err = r.hnRepo.Create(c, hnDto, tx)
+		if err != nil {
+			return nil, fmt.Errorf("Habit::Create : %v", err)
+		}
+	}
+
+	// Update Habit's nodes & last_node_id
+	{
+		hnIDJson, err := json.Marshal([]int64{hNode.Id})
+		if err != nil {
+			return nil, fmt.Errorf("Habit::Create : %v", err)
+		}
+		err = r.update(c, map[string]interface{}{
+			r.cols.NodeIDs:    string(hnIDJson),
+			r.cols.LastNodeID: hNode.Id,
+		}, sq.Eq{
+			r.cols.Id: hID,
+		}, tx)
+		if err != nil {
+			return nil, fmt.Errorf("Habit::Create : %v", err)
+		}
+	}
+
+	return &domain.Habit{
+		Id:       hID,
+		Name:     dto.Name,
+		NodeIDs:  []int64{hNode.Id},
+		LastNode: *hNode,
+	}, nil
 }
 
 func (r *habitRepository) Index(c context.Context, page uint64, limit uint64, unarchived bool) ([]domain.Habit, error) {
-    habits := []domain.Habit{}
+	habits := []domain.Habit{}
 
+	//table alias
+	hAs := "h"
+	hnAs := "hn"
+
+	hCs := r.csf.SelectCols(&hAs, domain.HabitCols.AsArray...)
+	hnCs := r.hnRepo.csf.SelectCols(&hnAs, domain.HabitNodeCols.AsArray...)
+
+	preSqlSelect := colscanner.CreateSelect(&hCs, &hnCs)
 	preSql := sq.
-		Select(domain.HabitCols.AsArray...).
-		From(domain.HabitTableName)
+		Select(preSqlSelect...).
+		From((domain.HabitTableName + " AS " + hAs) +
+			" JOIN " + (domain.HabitNodeTableName + " AS " + hnAs) + " ON " +
+			(hAs + "." + r.cols.Id) + " = " + (hnAs + "." + r.hnRepo.cols.HabitId))
 
 	if unarchived {
+		col := domain.HabitNodeCols.Str.ArchivedAt
 		preSql = preSql.
-			Where(sq.Expr(r.cols.ArchivedAt + " IS NULL"))
+			Where(sq.Expr(hnAs + "." + col + " IS NULL"))
 	}
 
-    s, args := preSql.
-        OrderBy(r.cols.Id).
+	s, args := preSql.
+		OrderBy(hnAs + "." + r.cols.Id).
 		Limit(limit).
 		Offset(page * limit).MustSql()
 
-    rows, err := r.db.QueryContext(c, s, args...)
-    if err != nil {
-        return nil, fmt.Errorf("Habit::Index : %v", err)
-    }
-    defer rows.Close()
+	rows, err := r.db.QueryContext(c, s, args...)
+	if err != nil {
+		return nil, fmt.Errorf("Habit::Index : %v", err)
+	}
+	defer rows.Close()
 
-    for rows.Next() {
-        habit, err := r.scanOneHabit(rows)
+	for rows.Next() {
+		_hCs := r.csf.From(hCs)
+		_hnCs := r.hnRepo.csf.From(hnCs)
+		err := colscanner.ScanRow(rows, &_hCs, &_hnCs)
+		habit, _ := _hCs.GetResult()
+		habitNode, _ := _hnCs.GetResult()
+		habit.LastNode = habitNode
 		if err != nil {
-			return nil, fmt.Errorf("Habit::scanOneHabit : %v", err)
+			return nil, fmt.Errorf("Habit::Index : %v", err)
 		}
-        habits = append(habits, habit)
-    }
-    if err := rows.Err(); err != nil {
-        return nil, fmt.Errorf("Habit::Index : %v", err)
-    }
-    return habits, nil
+		habits = append(habits, habit)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Habit::Index : %v", err)
+	}
+	return habits, nil
 }
 
-func (r *habitRepository) Create(c context.Context,dto domain.CreateHabitDTO) (*domain.Habit, error) {
-	createdAt := time.Now()
-
-	valueMap := map[string]interface{}{
-		r.cols.Name : dto.Name,
-		r.cols.Amount : dto.Amount,
-		r.cols.Unit : dto.Unit,
-		r.cols.RestDay : dto.RestDay,
-		r.cols.RestDayMode : dto.RestDayMode,
-		r.cols.StartAt : createdAt.String()[:10],
-	}
-
-	if dto.LastHabitID != nil {
-		valueMap[r.cols.LastHabitID] = *dto.LastHabitID
-	}
-
-    sql, args := sq.
-        Insert(domain.HabitTableName).
-        SetMap(valueMap).MustSql()
-
-    res, err := r.db.ExecContext(c, sql, args...)
-    if err != nil {
-        return nil, fmt.Errorf("Habit::Create : %v", err)
-    }
-    ID, err := res.LastInsertId()
-    if err != nil {
-        return nil, fmt.Errorf("Habit::Create : %v", err)
-    }
-    return &domain.Habit{
-        Id: ID,
-        Name: dto.Name,
-        Amount: uint(dto.Amount),
-        Unit: dto.Unit,
-        ArchivedAt: nil,
-		RestDay: uint(dto.RestDay),
-		RestDayMode: dto.RestDayMode,
-		StartAt: createdAt,
-		LastHabitId: nil,
-    }, nil
-}
-
-// Can return nil habit
-func (r *habitRepository) getOne(c context.Context,id int64) (*domain.Habit, error) {
-	s, args := sq.
-        Select(domain.HabitCols.AsArray...).
-        From(domain.HabitTableName).
-		Where(sq.Eq{
-			r.cols.Id : id,
-		}).MustSql()
-	
-	row := r.db.QueryRowContext(c, s, args...)
-	habit, err := r.scanOneHabit(row)
+func (r *habitRepository) Get(c context.Context, id int64) (_ *domain.HabitAllNodes, err error) {
+	var h domain.HabitAllNodes
+	h.Habit, err = r.getOne(c, id)
 	if err != nil {
-		e := errors.Unwrap(err)
-		if errors.Is(e, sql.ErrNoRows){
-			return nil, nil
-		}
-		return nil, err
+		return nil, fmt.Errorf("Habit::Get : %v", err)
 	}
-	return &habit, nil
+	h.Nodes, err = r.hnRepo.get(c, sq.Eq{
+		r.hnRepo.cols.HabitId: id,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Habit::Get : %v", err)
+	}
+	return &h, nil
 }
 
-// will throw error if habit doesnt exist
-func (r *habitRepository) getNode(c context.Context, id int64) (*domain.HabitNode, error) {
-	habitNode := &domain.HabitNode{}
+func (r *habitRepository) Update(c context.Context, id int64, name string) error {
+	err := r.update(c, map[string]interface{}{
+		r.cols.Name: name,
+	}, sq.Eq{
+		r.cols.Id: id,
+	}, nil)
 
-	habit, err := r.getOne(c, id)
-	if err != nil {
-		return nil, fmt.Errorf("Habit::GetNode : %v", err)
-	}
-	if habit == nil {
-		//TODO: move the habit not found error to its own global var
-		return nil, fmt.Errorf("Habit::GetNode : %v", errors.New("habit not found"))
-	}
-	habitNode.Habit = *habit
-
-	var prevHabit *domain.Habit 
-	if habit.LastHabitId != nil {
-		prevHabit, err = r.getOne(c, *habit.LastHabitId)
-		if err != nil {
-			return nil, fmt.Errorf("Habit::GetNode : %v", err)
-		}
-	}
-	habitNode.PreviousHabit = prevHabit 
-
-	var nextHabit domain.Habit
-	nhSql, nhArgs := sq.
-		Select(domain.HabitCols.AsArray...).
-		Where(sq.Eq{
-			r.cols.LastHabitID : id,
-		}).MustSql()
-	nhRow := r.db.QueryRowContext(c, nhSql, nhArgs...)
-	nextHabit, err = r.scanOneHabit(nhRow)
-	if err != nil {
-		e := errors.Unwrap(err)
-		if errors.Is(e, sql.ErrNoRows){
-			habitNode.NextHabit = nil
-		} else{
-			return nil, fmt.Errorf("Habit::GetNode : %v", err)
-		}
-	}
-	habitNode.NextHabit = &nextHabit
-	return habitNode, nil
+	return err
 }
 
-func (r *habitRepository) Update(c context.Context, dto domain.UpdateHabitDTO) (*domain.Habit, error) {
-	oldHabit, err := r.getOne(c, dto.ID)
-	if err != nil {
-		return nil, fmt.Errorf("Habit::Update : %v", err)
-	}
-	if oldHabit == nil {
-		return nil, nil
-	}
-	//if start_at is now() just change it, otherwise create new habit with dto's id as last_habit_id
-	if oldHabit.StartAt.String()[:10] == time.Now().String()[:10] {
-		updateMap := make(map[string]interface{})
-		if dto.Amount != nil {
-			updateMap[r.cols.Amount] = *dto.Amount
-		}
-		if dto.Unit != nil {
-			updateMap[r.cols.Unit] = *dto.Unit
-		} 
-        if dto.RestDay != nil {
-            updateMap[r.cols.RestDay] = *dto.RestDay
-        }
-        if dto.RestDayMode != nil {
-            updateMap[r.cols.RestDayMode] = *dto.RestDayMode
-        }
-		//TODO: Add rest day and rest mode
 
-		s, args := sq.
-			Update(domain.HabitTableName).
-			SetMap(updateMap).
-			Where(sq.Eq{
-				r.cols.Id : dto.ID,
-			}).MustSql()
-		_, err := r.db.ExecContext(c, s, args...)
-		if err != nil {
-			return nil, fmt.Errorf("Habit::Update : %v", err)
-		}
-		return nil, nil
-	}else {
-        createDto := domain.CreateHabitDTO{
-            LastHabitID: &dto.ID,
-            Name : oldHabit.Name,
-        }
-
-        //Amount
-        if dto.Amount != nil {
-            createDto.Amount = *dto.Amount
-        }else {
-            createDto.Amount = int(oldHabit.Amount)
-        }
-        //Unit
-        if dto.Unit != nil {
-            createDto.Unit = *dto.Unit
-        } else {
-            createDto.Unit = oldHabit.Unit
-        }
-        //Rest Day
-        if dto.RestDay != nil {
-            createDto.RestDay = *dto.RestDay
-        } else {
-            createDto.RestDay = int(oldHabit.RestDay)
-        }
-        //Rest Day Mode
-        if dto.RestDayMode != nil {
-            createDto.RestDayMode = *dto.RestDayMode
-        } else {
-            createDto.RestDayMode = oldHabit.RestDayMode
-        }
-
-        habit, err := r.Create(c, createDto)
-        if err != nil {
-            return nil, fmt.Errorf("Habit::Update : %v", err)
-        }
-
-        return habit, nil
-    }
-}
-
-func (r *habitRepository) UpdateName(c context.Context, id int64, name string) error {
-    s, args := sq.
-		Update(domain.HabitTableName).
-		SetMap(map[string]interface{}{
-            r.cols.Name : name,
-        }).
-		Where(sq.Eq{
-			r.cols.Id : id,
-		}).MustSql()
-	_, err := r.db.ExecContext(c, s, args...)
-	if err != nil {
-		return fmt.Errorf("Habit::UpdateName : %v", err)
-	}
-	return nil
-}
-
-func (r *habitRepository) ToggleArchived(c context.Context, id int64) (*domain.Habit, error) {
-    isArchived := false
-	startAt := ""
-    {
-		sql, args := sq.
-			Select(fmt.Sprintf(` 
-				case 
-					when %[1]v is null then false
-					else true
-				end as %[1]v`, r.cols.ArchivedAt), 
-				r.cols.StartAt).
-			From(domain.HabitTableName).
-			Where(sq.Eq{
-				r.cols.Id: id,
-			}).MustSql()
-
-		row := r.db.QueryRowContext(c, sql, args...)
-		err := row.Scan(&isArchived, &startAt)
-		if err != nil {
-            return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
-		}
-	}
-
-	//if already archived and not created now, create new habit but with same values
-	if isArchived && startAt != time.Now().String()[:10] {
-		habit, err := r.getOne(c, id)
+// return new habitNode if unarchiving old habit
+func (r *habitRepository) ToggleArchived(c context.Context, id int64) (_ *domain.HabitNode,err error) {
+	var habit domain.Habit
+	today := time.Now().String()[:10]
+	{
+		habit, err = r.getOne(c, id)
 		if err != nil {
 			return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 		}
-		if habit == nil {
-			return nil, nil
-		}
-		_, err = r.Create(c, domain.CreateHabitDTO{
-			Name: habit.Name,
-			Amount: int(habit.Amount),
-			Unit: habit.Unit,
-			LastHabitID: &id,
-		})
+		habit.LastNode, err = r.hnRepo.getOne(c, habit.NodeIDs[habit.NodeLength-1])
 		if err != nil {
 			return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
-		} 
-		return habit, nil
+		}
+	}
+	ln := &habit.LastNode
+
+	//if already archived and not created now, create new habitNode but with same values
+	lnStartAt := habit.LastNode.StartAt.String()[:10]
+	if (ln.ArchivedAt != nil) && (lnStartAt != today) {
+		hn, err := r.hnRepo.Create(c, domain.CreateHabitNodeDTO{
+			MinPerDay:   int(ln.MinPerDay),
+			Unit:        ln.Unit,
+			RestDay:     int(ln.RestDay),
+			RestDayMode: ln.RestDayMode,
+			HabitId:     habit.Id,
+		}, nil)
+		if err != nil {
+			return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
+		}
+		return hn,nil
 	}
 
-    newArchivedAt := map[string]interface{}{
-        r.cols.ArchivedAt : time.Now().String()[:10],
-    }
-    
-	sql, args := sq.
-		Update(domain.HabitTableName).
-		SetMap(newArchivedAt).
-		MustSql()
-	_, err := r.db.ExecContext(c, sql, args...)
+	err = r.hnRepo.update(c, map[string]interface{}{
+		r.hnRepo.cols.ArchivedAt: today,
+	}, sq.Eq{
+		r.hnRepo.cols.Id: ln.Id,
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Habit::ToggleArchived : %v", err)
 	}
@@ -316,68 +271,64 @@ func (r *habitRepository) ToggleArchived(c context.Context, id int64) (*domain.H
 }
 
 func (r *habitRepository) Delete(c context.Context, id int64) error {
-	//TODO: if there is habit (A) that have this habit as last habit and this habit has last habit (B), change habit (A) last habit to habit (B)
-	habit, err := r.getNode(c, id)
-	if err != nil {
-		return fmt.Errorf("Habit::Delete : %v", err)
-	}
-	if habit.PreviousHabit != nil && habit.NextHabit != nil {
-		s, args := sq.
-			Update(domain.HabitTableName).
-			SetMap(map[string]interface{}{
-				r.cols.LastHabitID : habit.PreviousHabit.Id,
-			}).Where(sq.Eq{
-				r.cols.Id : habit.NextHabit.Id,
-			}).MustSql()
-		_, err := r.db.ExecContext(c, s, args...)
-		if err != nil {
-			return fmt.Errorf("Habit::Delete : %v", err)
-		}
-	}
-
 	sql, args := sq.
-        Delete(domain.HabitTableName).
-        Where(sq.Eq{
-            r.cols.Id : id,
-        }).MustSql()
+		Delete(domain.HabitTableName).
+		Where(sq.Eq{
+			r.cols.Id: id,
+		}).MustSql()
 
-	_, err = r.db.ExecContext(c, sql, args...)
+	_, err := r.db.ExecContext(c, sql, args...)
 	if err != nil {
 		return fmt.Errorf("Habit::Delete : %v", err)
 	}
 	return nil
 }
 
-func (r *habitRepository) scanOneHabit(row domain.Scannable) (domain.Habit, error) {
-	habit := domain.Habit{}
-    var archivedAtStr sql.NullString
-	var startAtStr string
-	var lastHabitID sql.NullInt64
-    err := row.Scan(&habit.Id, &lastHabitID, &habit.Name, 
-			&habit.Amount, &habit.Unit, 
-			&habit.RestDay, &habit.RestDayMode, 
-			&startAtStr, &archivedAtStr)
+// return err if no habit found.
+// Doesn't populate lastNode
+func (r *habitRepository) getOne(c context.Context, id int64) (domain.Habit, error) {
+	cs := r.csf.SelectCols(nil, domain.HabitCols.AsArray...)
+	sql, args := sq.Select(cs.Cols...).
+		From(domain.HabitTableName).
+		Where(sq.Eq{
+			r.cols.Id: id,
+		}).MustSql()
 
+	row := r.db.QueryRowContext(c, sql, args...)
+	err := colscanner.ScanRow(row)
 	if err != nil {
-        return domain.Habit{}, fmt.Errorf("Habit::Index : %v", err)
-    }
-	
-	//last_habit_id nullble check
-	if lastHabitID.Valid {
-		habit.LastHabitId = &lastHabitID.Int64
+		return domain.Habit{}, fmt.Errorf("Habit::getOne : %v", err)
 	}
-	//start_at nullble check
-	habit.StartAt, err = time.Parse("2006-01-02", startAtStr)
+	h, _ := cs.GetResult()
+	return h, nil
+}
+
+// allow nil tx
+func (r *habitRepository) update(c context.Context, setMap map[string]interface{}, where interface{}, tx *sql.Tx) error {
+	var db execable
+	if tx != nil {
+		db = tx
+	} else {
+		db = r.db
+	}
+
+	sql, args := sq.
+		Update(domain.HabitTableName).
+		SetMap(setMap).
+		Where(where).MustSql()
+
+	res, err := db.ExecContext(c, sql, args...)
 	if err != nil {
-		return domain.Habit{}, fmt.Errorf("Habit::Index : %v", err)
+		return fmt.Errorf("Habit::update : %v", err)
 	}
-	//archived_at nullble check
-    if archivedAtStr.Valid {
-        t, err := time.Parse("2006-01-02", archivedAtStr.String)
-        if err != nil {
-            return domain.Habit{}, fmt.Errorf("Habit::scanOneHabit : %v", err)
-        }
-        habit.ArchivedAt = &t
-    }
-	return habit, nil
+	nAffect, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("Habit::update : %v", err)
+	}
+	if nAffect == 0 {
+		return fmt.Errorf("Habit::update : %v",
+			errors.New("no row affected"),
+		)
+	}
+	return nil
 }
